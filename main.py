@@ -7,13 +7,10 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage
 from pydantic import BaseModel, Field
 
 load_dotenv()
-
-
-# --- Step 2: Pydantic models define the exact JSON shape we want back ---
 
 
 class QuestionAnalysis(BaseModel):
@@ -76,48 +73,11 @@ agent = create_agent(
     system_prompt="You are a helpful assistant",
 )
 
-# with_structured_output forces the model to return our Pydantic schema
 analysis_model = init_chat_model("openai:gpt-5-mini").with_structured_output(
     QuestionAnalysis
 )
 
 ROLE_MAP = {"human": "user", "ai": "assistant"}
-
-
-def log_messages(messages: list) -> None:
-    """Print every message the agent produced so you can inspect the flow."""
-    print("\n--- Message trace ---")
-    for index, message in enumerate(messages, start=1):
-        label = message.__class__.__name__
-
-        if isinstance(message, HumanMessage):
-            print(f"{index}. [{label}] {message.content}")
-
-        elif isinstance(message, SystemMessage):
-            print(f"{index}. [{label}] {message.content}")
-
-        elif isinstance(message, AIMessage):
-            if message.content:
-                print(f"{index}. [{label}] {message.content}")
-            else:
-                print(f"{index}. [{label}] (no text — tool call only)")
-
-            for tool_call in message.tool_calls:
-                print(
-                    f"    -> tool call: {tool_call['name']}("
-                    f"{json.dumps(tool_call['args'])})"
-                )
-
-        elif isinstance(message, ToolMessage):
-            print(
-                f"{index}. [{label}] {message.name} "
-                f"(id: {message.tool_call_id}) -> {message.content}"
-            )
-
-        else:
-            print(f"{index}. [{label}] {message.content}")
-
-    print("--- End trace ---\n")
 
 
 def _serialize_messages(messages: list) -> list[dict]:
@@ -148,18 +108,10 @@ def analyze_question(user_input: str) -> QuestionAnalysis:
 def get_response(messages: list[dict]) -> dict:
     """Run structured analysis + agent, return typed JSON."""
     user_input = _latest_user_message(messages)
-
-    # Step 2a: structured extraction (no tools — just classification)
     analysis = analyze_question(user_input)
-    print("\n--- Structured analysis ---")
-    print(f"  city:   {analysis.city}")
-    print(f"  intent: {analysis.intent}")
-    print("--- End analysis ---")
 
-    # Step 2b: agent answers the question (may use tools)
     result = agent.invoke({"messages": messages})
     updated_messages = result["messages"]
-    log_messages(updated_messages)
 
     answer = ""
     for message in reversed(updated_messages):
